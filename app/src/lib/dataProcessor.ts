@@ -5,6 +5,7 @@ import { parse } from 'csv-parse/sync';
 // Define the structure of a candidate based on the CSV headers
 // Adapt according to the actual fields needed for scoring
 interface Candidate {
+    id: string;
     name: string;
     jobTitle: string;
     headline: string;
@@ -55,6 +56,7 @@ export const loadAndPreprocessCandidates = async (): Promise<Candidate[]> => {
 
     const processedCandidates: Candidate[] = [];
     const uniqueIdentifiers = new Set<string>();
+    let candidateIndex = 0;
 
     for (const record of records) {
         // Key to identify duplicates (e.g., name + job title)
@@ -69,8 +71,11 @@ export const loadAndPreprocessCandidates = async (): Promise<Candidate[]> => {
         }
         uniqueIdentifiers.add(uniqueKey);
 
+        const candidateId = `candidate-${candidateIndex++}`;
+
         // Apply normalization and cleaning to relevant text fields
         const candidate: Candidate = {
+            id: candidateId,
             name: nameNormalized,
             jobTitle: normalizeText(record.jobTitle),
             headline: headlineNormalized, // Already normalized and cleaned

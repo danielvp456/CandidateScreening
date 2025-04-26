@@ -37,7 +37,7 @@ The project is divided into two main components:
     ```
 2.  **Install App dependencies:**
     ```bash
-    cd app
+    cd .\app\
     npm install
     cd ..
     ```
@@ -45,7 +45,7 @@ The project is divided into two main components:
     *(Pending: Instructions for installing Python dependencies)*
     ```bash
     # Example:
-    # cd llm
+    # cd .\llm\
     # python -m venv venv
     # source venv/bin/activate # or venv\Scripts\activate on Windows
     # pip install -r requirements.txt
