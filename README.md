@@ -7,7 +7,11 @@ This project enables recruiters to submit a job description and receive a ranked
 The project is divided into two main components:
 
 -   **/app:** A Next.js application (React + TypeScript) providing the user interface and backend API.
+    -   **Frontend Architecture:** Component-based (React) using functional components and hooks. The structure follows standard Next.js conventions (`pages`, `components`, `hooks`, `types`).
+    -   **Backend Architecture:** Built using Next.js API Routes. A single endpoint (`/api/score`) handles requests, orchestrates calls to the Python module, and returns results.
 -   **/llm:** Python scripts responsible for interacting with the Large Language Model (LLM) API to score candidates.
+    -   **Python Module Architecture:** Modular design. A main script (`main.py`) acts as the entry point, orchestrating calls to separate modules for data processing (`data_processor.py`), LLM interaction (`llm_interaction.py`), and prompt management (`prompts.py`).
+    -   **Communication (Node.js <-> Python):** Initially implemented via Node.js `child_process` invoking the Python script (`main.py`) and communicating through standard input/output (stdin/stdout).
 
 *(Architecture diagram will be added later)*
 
