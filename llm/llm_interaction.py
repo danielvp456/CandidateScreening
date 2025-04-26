@@ -28,7 +28,7 @@ BATCH_SIZE = 10 # As specified in requirements
 
 # Initialize LLMs (ensure API keys are set in .env)
 llms = {
-    'openai': ChatOpenAI(temperature=0, model_name="gpt-4o"), # Or another suitable model
+    'openai': ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo"), # Or another suitable model
     'gemini': ChatGoogleGenerativeAI(temperature=0, model="gemini-1.5-flash") # Or another suitable model
 }
 
@@ -106,27 +106,28 @@ retry_decorator = retry(
     retry=retry_if_exception_type((Exception)) # Retry on generic exceptions likely from API errors (e.g., 429, 5xx)
 )
 
+# Make the function async as it's awaited
 @retry_decorator
-def invoke_llm_with_retry(chain: Any, prompt_values: Dict[str, Any]) -> Any:
-    """Invokes the LLM chain with retry logic."""
-    # Logging info about the attempt (already goes to stderr)
-    logging.info(f"Invoking LLM... Attempt {invoke_llm_with_retry.retry.statistics['attempt_number']}")
+async def invoke_llm_with_retry(chain: Any, prompt_values: Dict[str, Any]) -> Any:
+    """Invokes the LLM chain with retry logic (now async)."""
+    # Access attempt number - This should work correctly with async tenacity decorator
+    attempt_no = invoke_llm_with_retry.retry.statistics.get('attempt_number', 1) # Default to 1 if not found
+    logging.info(f"Invoking LLM... Attempt {attempt_no}")
     try:
-        # The actual invocation
-        return chain.invoke(prompt_values)
+        # Use await chain.ainvoke for async chains if applicable, or run sync invoke in executor
+        # Assuming chain.invoke can be awaited directly or handled by Langchain's async logic
+        # If chain.invoke is purely synchronous, it needs to be run in an executor for true async
+        # e.g., result = await asyncio.to_thread(chain.invoke, prompt_values)
+        # For now, let's assume Langchain handles it or chain.invoke is awaitable
+        return await chain.ainvoke(prompt_values) # Use ainvoke if the chain supports it
     except KeyError as ke:
-        # Specific catch for KeyError to get more details
-        logging.error(f"Caught KeyError during invoke: {ke}", exc_info=True) # Log traceback
-        # Potentially log parts of the prompt_values to see if they look correct
+        logging.error(f"Caught KeyError during invoke: {ke}", exc_info=True)
         logging.error(f"Prompt keys available: {list(prompt_values.keys())}")
-        # Re-raise the exception so Tenacity can handle retries if configured for KeyError
-        # Or handle it differently if needed
         raise 
     except Exception as e:
-        # Catch other exceptions
-        # The logging in score_candidates_batch already handles generic errors
-        # We re-raise here primarily for Tenacity's retry mechanism
-        raise # Re-raise for Tenacity
+        # Log other exceptions caught during invocation
+        logging.error(f"Exception during invoke attempt {attempt_no}: {e}", exc_info=True)
+        raise
 
 async def score_candidates_batch(
     job_description: str,
@@ -139,17 +140,11 @@ async def score_candidates_batch(
     if not llm:
         raise ValueError(f"Unsupported model provider: {model_provider}")
 
-    # Use standard prompt or retry prompt based on attempt number
-    # TEMPORARY CHANGE: Always use SCORING_PROMPT_TEMPLATE for the first attempt for debugging
-    # prompt_template = RETRY_PROMPT_TEMPLATE if attempt_num > 1 else SCORING_PROMPT_TEMPLATE
     if attempt_num > 1:
         prompt = RETRY_PROMPT_TEMPLATE
     else:
-        # Temporarily bypass few-shot logic
-        # prompt = build_prompt_with_few_shots(job_description, candidates_batch)
-        prompt = SCORING_PROMPT_TEMPLATE # Use the basic template directly
+        prompt = SCORING_PROMPT_TEMPLATE
 
-    # Chain definition (different based on attempt)
     if attempt_num > 1:
         # For retry, parse as string first, then attempt JSON parsing manually
         chain = prompt | llm | string_parser 
@@ -159,12 +154,13 @@ async def score_candidates_batch(
     
     prompt_values = {
         "job_description": job_description,
-        "candidates_json": format_candidates_for_prompt(candidates_batch) # Needed for both templates
+        "candidates_json": format_candidates_for_prompt(candidates_batch)
     }
 
     try:
         # Use logging to stderr for status messages
         logging.info(f"Scoring batch of {len(candidates_batch)} candidates with {model_provider} (Attempt {attempt_num})")
+        # Await the now async invoke_llm_with_retry function
         result = await invoke_llm_with_retry(chain, prompt_values)
         
         if isinstance(result, str): # Handle result from retry attempt (string parser)
@@ -195,7 +191,7 @@ async def score_candidates_batch(
     except Exception as e:
         # Enhanced error logging: Check if it's a RetryError and log the original cause
         if isinstance(e, RetryError):
-            original_exception = e.cause.exception()
+            original_exception = e
             logging.error(
                 f"LLM invocation failed after multiple retries. Original Exception: {type(original_exception).__name__}: {original_exception}",
                 exc_info=True # Log the full traceback of the original exception

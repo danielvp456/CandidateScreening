@@ -24,7 +24,7 @@ type ApiResponse = {
 };
 
 // Helper function to run the Python script
-function runPythonScript(jobDescription: string, candidates: any[]): Promise<PythonOutput> {
+function runPythonScript(jobDescription: string, candidates: any[], modelProvider: string): Promise<PythonOutput> {
     return new Promise((resolve, reject) => {
         // Adjust python command if necessary (e.g., use python3 or a venv path)
         const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python'; 
@@ -67,7 +67,7 @@ function runPythonScript(jobDescription: string, candidates: any[]): Promise<Pyt
         const scriptInput = JSON.stringify({
             job_description: jobDescription,
             candidates: candidates,
-            model_provider: 'openai' // Or make this configurable
+            model_provider: modelProvider
         });
 
         // Send data to Python script via stdin
@@ -177,7 +177,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
         // 3. Call Python LLM Script
         console.log(`Calling Python script with ${modelProvider}...`);
-        const pythonResult = await runPythonScript(jobDescription, allCandidates);
+        const pythonResult = await runPythonScript(jobDescription, allCandidates, modelProvider);
 
         if (pythonResult.errors && pythonResult.errors.length > 0) {
             console.warn("Python script reported errors:", pythonResult.errors);

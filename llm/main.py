@@ -13,8 +13,6 @@ def read_input() -> ScoringInput:
     """Reads JSON input from stdin and parses it into ScoringInput."""
     try:
         input_data = json.load(sys.stdin)
-        logging.info(f"Received input: {input_data}")
-        logging.info(f"Received input with {len(input_data.get('candidates', []))} candidates for model {input_data.get('model_provider')}")
         # Validate input using Pydantic
         scoring_input = ScoringInput(**input_data)
         # Assign unique IDs if missing (simple index for now)
@@ -31,7 +29,7 @@ def read_input() -> ScoringInput:
     except json.JSONDecodeError as e:
         logging.error(f"Error decoding JSON input: {e}")
         sys.exit(1)
-    except Exception as e: # Catch Pydantic validation errors or others
+    except Exception as e:
         logging.error(f"Error processing input: {e}")
         sys.exit(1)
 
@@ -51,7 +49,6 @@ def write_output(output_data: ScoringOutput):
 async def main():
     """Main async function to handle the scoring process."""
     scoring_input = read_input()
-
     scored_candidates_list, errors = await score_candidates(
         job_description=scoring_input.job_description,
         candidates=scoring_input.candidates,
