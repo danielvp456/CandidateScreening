@@ -3,18 +3,15 @@ from typing import List, Optional
 
 class Candidate(BaseModel):
     """Represents the structure of a candidate based on preprocessed data."""
-    # Using Optional for fields that might be less critical or sometimes missing
     id: str = Field(..., description="Unique identifier for the candidate, could be derived or passed.")
     name: str
     jobTitle: Optional[str] = None
     headline: Optional[str] = None
     summary: Optional[str] = None
-    keywords: Optional[str] = None # Could be a list if parsed further
+    keywords: Optional[str] = None
     educations: Optional[str] = None
     experiences: Optional[str] = None
-    skills: Optional[str] = None # Could be a list if parsed further
-    # Include any other fields from the preprocessor that are relevant for scoring
-    # original_data: dict = {} # Optional: To keep the full original record if needed
+    skills: Optional[str] = None
 
 class ScoredCandidate(BaseModel):
     """Represents a candidate with their score and highlights."""

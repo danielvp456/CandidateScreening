@@ -49,11 +49,7 @@ FEW_SHOT_EXAMPLES = [
             }
         ]
     },
-    # Add 1-2 more diverse examples if needed
 ]
-
-# We will format the few-shot examples into the prompt structure within llm_interaction.py
-# This template focuses on the main request structure
 
 SCORING_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(SYSTEM_INSTRUCTION),
@@ -82,9 +78,8 @@ Evaluate the candidates based on the job description and provide the results STR
 """)
 ])
 
-# Simple prompt variant for retry on parsing error (less strict output constraint)
 RETRY_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
-    SystemMessagePromptTemplate.from_template(SYSTEM_INSTRUCTION.replace("STRICTLY ", "")), # Slightly less strict instruction
+    SystemMessagePromptTemplate.from_template(SYSTEM_INSTRUCTION.replace("STRICTLY ", "")),
     HumanMessagePromptTemplate.from_template("""
 Job Description:
 ---

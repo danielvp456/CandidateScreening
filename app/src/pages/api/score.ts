@@ -1,9 +1,9 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
 import { spawn } from 'child_process';
 import path from 'path';
-import { loadAndPreprocessCandidates } from '@/lib/dataProcessor'; // Assuming alias setup
+import { loadAndPreprocessCandidates } from '@/lib/dataProcessor';
 
-// Define types for the API response and Python script output
+
 type ScoredCandidate = {
     id: string;
     name: string;
@@ -23,12 +23,10 @@ type ApiResponse = {
     details?: any;
 };
 
-// Helper function to run the Python script
 function runPythonScript(jobDescription: string, candidates: any[], modelProvider: string): Promise<PythonOutput> {
     return new Promise((resolve, reject) => {
-        // Adjust python command if necessary (e.g., use python3 or a venv path)
         const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python'; 
-        const scriptPath = path.join(process.cwd(), "..", "llm", "main.py"); // Corrected path concatenation
+        const scriptPath = path.join(process.cwd(), "..", "llm", "main.py");
         const pythonProcess = spawn(pythonExecutable, [scriptPath]);
 
         let stdoutData = '';
@@ -43,7 +41,7 @@ function runPythonScript(jobDescription: string, candidates: any[], modelProvide
         });
 
         pythonProcess.on('close', (code) => {
-            console.log(`Python script stderr: ${stderrData}`); // Log Python stderr
+            console.log(`Python script stderr: ${stderrData}`);
             if (code !== 0) {
                 console.error(`Python script exited with code ${code}`);
                 return reject(new Error(`Python script failed with code ${code}. Stderr: ${stderrData}`));
@@ -63,14 +61,12 @@ function runPythonScript(jobDescription: string, candidates: any[], modelProvide
             reject(new Error(`Failed to start Python process: ${error.message}`));
         });
 
-        // Prepare input for Python script (matching llm/data_models.py ScoringInput)
         const scriptInput = JSON.stringify({
             job_description: jobDescription,
             candidates: candidates,
             model_provider: modelProvider
         });
 
-        // Send data to Python script via stdin
         pythonProcess.stdin.write(scriptInput);
         pythonProcess.stdin.end();
     });
@@ -154,7 +150,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     const { jobDescription, modelProvider = 'openai' } = req.body;
 
-    // 1. Validate Input
     if (!jobDescription) {
         return res.status(400).json({ error: 'Missing jobDescription in request body' });
     }
@@ -166,7 +161,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     }
 
     try {
-        // 2. Load and Preprocess Candidates
         console.log("Loading and preprocessing candidates...");
         const allCandidates = await loadAndPreprocessCandidates();
         if (!allCandidates || allCandidates.length === 0) {
@@ -175,23 +169,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         }
         console.log(`Loaded ${allCandidates.length} candidates.`);
 
-        // 3. Call Python LLM Script
         console.log(`Calling Python script with ${modelProvider}...`);
         const pythonResult = await runPythonScript(jobDescription, allCandidates, modelProvider);
 
         if (pythonResult.errors && pythonResult.errors.length > 0) {
             console.warn("Python script reported errors:", pythonResult.errors);
-            // Decide if partial results are acceptable or if it's a full error
-            // For now, we proceed but log the errors.
         }
 
-        // 4. Process Results: Sort and Get Top 30
         const sortedCandidates = pythonResult.scored_candidates.sort((a, b) => b.score - a.score);
         const top30Candidates = sortedCandidates.slice(0, 30);
 
         console.log(`Returning top ${top30Candidates.length} candidates.`);
 
-        // 5. Return Response
         return res.status(200).json({
             message: `Successfully scored ${pythonResult.scored_candidates.length} candidates. Returning top ${top30Candidates.length}. Python errors: ${pythonResult.errors.length}`,
             data: top30Candidates,
