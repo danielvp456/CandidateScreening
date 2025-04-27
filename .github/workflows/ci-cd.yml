@@ -80,13 +80,13 @@ jobs:
         run: npm install --global vercel@latest
 
       - name: Pull Vercel Environment Information for Production
-        run: vercel pull --cwd ./app --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel pull --cwd --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Build Project Artifacts for Production
-        run: vercel build --cwd ./app --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel build --cwd --prod --token=${{ secrets.VERCEL_TOKEN }}
 
       - name: Deploy Project Artifacts to Vercel Production
-        run: vercel deploy --cwd ./app --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        run: vercel deploy --cwd --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
 
   deploy-llm:
     name: Deploy LLM API to Cloud Run
