@@ -1,0 +1,131 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ] # Ejecutar en cada push a la rama main
+
+# Permisos necesarios para Google Cloud y Vercel
+permissions:
+  contents: read
+  id-token: write # Necesario para autenticarse con GCP usando Workload Identity Federation
+
+jobs:
+  test-app:
+    name: Test Next.js App
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./app # Establecer el directorio de trabajo para los comandos de este job
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18' # O la versión que estés usando
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run build
+        run: npm run build
+
+  test-llm:
+    name: Test Python LLM API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./llm # Establecer el directorio de trabajo para los comandos de este job
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9' # O la versión que estés usando
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest 
+
+  deploy-app:
+    name: Deploy App to Vercel
+    runs-on: ubuntu-latest
+    needs: test-app # Ejecutar sólo si test-app fue exitoso
+    environment: production # Opcional: Define un entorno para proteger los secretos
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Instalar Vercel CLI (alternativa a la acción oficial si se necesita más control)
+      # - name: Install Vercel CLI
+      #   run: npm install --global vercel@latest
+
+      # Desplegar a producción con la acción oficial
+      - name: Deploy Project Artifacts to Vercel
+        uses: vercel/vercel-action@v3
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./app
+          vercel-args: '--prod' # Despliega a producción
+
+  deploy-llm:
+    name: Deploy LLM API to Cloud Run
+    runs-on: ubuntu-latest
+    needs: test-llm # Ejecutar sólo si test-llm fue exitoso
+    environment: production # Opcional: Define un entorno para proteger los secretos
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Autenticación con Google Cloud usando Workload Identity Federation (recomendado)
+      # Asegúrate de haber configurado Workload Identity Federation en GCP
+      # https://github.com/google-github-actions/auth
+      - id: 'auth'
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}' # Utiliza la clave de la cuenta de servicio
+
+      # Configurar gcloud CLI
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Opcional: Configurar Docker para autenticarse con Google Artifact Registry (si usas GAR)
+      # - name: Configure Docker
+      #   run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev
+
+      # Construir y subir la imagen Docker (usando Cloud Build o Docker directamente)
+      # Ejemplo usando Cloud Build (requiere permisos de Cloud Build en la SA)
+      - name: Build and Push Docker image with Cloud Build
+        run: |
+          gcloud builds submit ./llm --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_SERVICE_NAME }}:latest
+
+      # Desplegar la imagen a Cloud Run
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ secrets.GCP_SERVICE_NAME }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          region: ${{ secrets.GCP_REGION }}
+          # Usa la imagen construida previamente (asegúrate que la etiqueta coincida)
+          image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_SERVICE_NAME }}:latest
+          # Opcional: Pasa variables de entorno desde secretos de GitHub a Cloud Run
+          # env_vars: |
+          #   OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_SECRET_NAME }}
+          #   GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_SECRET_NAME }}
+
+      # Opcional: Mostrar la URL del servicio desplegado
+      - name: Show deployed URL
+        run: echo "Deployed to ${{ steps.deploy.outputs.url }}" 
