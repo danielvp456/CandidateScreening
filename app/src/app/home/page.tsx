@@ -1,22 +1,125 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { ResultsTable } from "@/components/ResultsTable";
-import { ScoredCandidate, ApiResponse } from "@/types";
+import {
+    ScoredCandidate,
+    InitiationResponse,
+    TaskInfo,
+    TaskStatus,
+    isApiError,
+    ScoringResult
+} from "@/types";
+
+const POLLING_INTERVAL = 3000; // Check status every 3 seconds
 
 export default function HomePage() {
     const [jobDescription, setJobDescription] = useState<string>("");
     const [modelProvider, setModelProvider] = useState<string>("openai");
     const [results, setResults] = useState<ScoredCandidate[] | null>(null);
-    const [isLoading, setIsLoading] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
+    const [taskId, setTaskId] = useState<string | null>(null);
+    const [taskStatus, setTaskStatus] = useState<TaskStatus | null>(null);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+    const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    const checkStatus = async (currentTaskId: string) => {
+        try {
+            const response = await fetch(`/api/score/status?taskId=${currentTaskId}`);
+            const data: TaskInfo | { error: string, details?: unknown } = await response.json();
+
+            if (isApiError(data)) {
+                throw new Error(data.error || `Failed to fetch status (status ${response.status})`);
+            }
+
+            setTaskStatus(data.status);
+            setStatusMessage(data.message || null);
+
+            if (data.status === TaskStatus.COMPLETED) {
+                console.log("Task completed:", data);
+                stopPolling();
+                setTaskId(null);
+                const finalResult = data.result as ScoringResult;
+                const sortedData = finalResult?.scored_candidates.sort((a, b) => b.score - a.score) || [];
+                const top30Candidates = sortedData.slice(0, 30);
+                setResults(top30Candidates);
+                if (finalResult?.errors && finalResult.errors.length > 0) {
+                    console.warn("Scoring completed with errors:", finalResult.errors);
+                    setStatusMessage(`Scoring complete. ${finalResult.errors.length} batch error(s) occurred.`);
+                } else {
+                    setStatusMessage("Scoring completed successfully.");
+                }
+                setError(null);
+
+                console.log(`Attempting to delete task ${currentTaskId} from backend store...`);
+                fetch(`/api/score/task/${currentTaskId}`, { method: 'DELETE' })
+                    .then(deleteResponse => {
+                        if (deleteResponse.ok) {
+                            console.log(`Task ${currentTaskId} marked for deletion successfully.`);
+                        } else {
+                            console.error(`Failed to delete task ${currentTaskId}. Status: ${deleteResponse.status}`);
+                        }
+                    })
+                    .catch(deleteError => {
+                        console.error(`Error occurred during fetch to delete task ${currentTaskId}:`, deleteError);
+                    });
+            } else if (data.status === TaskStatus.FAILED) {
+                console.error("Task failed:", data);
+                stopPolling();
+                setTaskId(null);
+                setError(data.error_detail || data.message || "Scoring task failed.");
+                setStatusMessage(null);
+            } else {
+                console.log(`Task ${currentTaskId} status: ${data.status}`);
+            }
+        } catch (err: unknown) {
+            console.error("Error polling status:", err);
+            setError((err instanceof Error ? err.message : String(err)) || "Error checking task status.");
+            stopPolling();
+            setTaskId(null);
+            setTaskStatus(TaskStatus.FAILED);
+        }
+    };
+
+    const stopPolling = () => {
+        if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+            console.log("Polling stopped.");
+        }
+    };
+
+    useEffect(() => {
+        let initialCheckTimeoutId: any = null;
+
+        if (taskId) {
+            console.log(`Starting polling for task ${taskId}`);
+            initialCheckTimeoutId = setTimeout(() => {
+                checkStatus(taskId);
+                if (!pollingIntervalRef.current) {
+                    pollingIntervalRef.current = setInterval(() => {
+                        checkStatus(taskId);
+                    }, POLLING_INTERVAL);
+                }
+            }, 1000);
+        } else {
+            stopPolling();
+        }
+
+        return () => {
+            if (initialCheckTimeoutId) {
+                clearTimeout(initialCheckTimeoutId);
+            }
+            stopPolling();
+        };
+    }, [taskId]);
 
     const handleSubmit = async () => {
         if (!jobDescription.trim()) {
@@ -28,9 +131,12 @@ export default function HomePage() {
             return;
         }
 
-        setIsLoading(true);
         setError(null);
         setResults(null);
+        setStatusMessage("Initiating scoring task...");
+        setTaskStatus(TaskStatus.PENDING);
+        setTaskId(null);
+        stopPolling();
 
         try {
             const response = await fetch('/api/score', {
@@ -41,26 +147,29 @@ export default function HomePage() {
                 body: JSON.stringify({ jobDescription, modelProvider }),
             });
 
-            const data: ApiResponse = await response.json();
+            const data: InitiationResponse | { error: string, details?: unknown } = await response.json();
 
-            if (!response.ok) {
-                throw new Error(data.error || `Server error: ${response.status}`);
+            if (isApiError(data)) {
+                throw new Error(data.error || `Server error during initiation: ${response.status}`);
             }
 
-            if (data.data) {
-                 const sortedData = data.data.sort((a, b) => b.score - a.score);
-                 setResults(sortedData);
+            if (response.status === 202 && data.taskId) {
+                console.log("Task initiated successfully. Task ID:", data.taskId);
+                setTaskId(data.taskId);
+                setStatusMessage("Task submitted. Waiting for processing to start...");
             } else {
-                setError(data.message || "No valid data received from the server.");
+                throw new Error("Failed to initiate task. Invalid response from server.");
             }
 
         } catch (err: unknown) {
-            console.error("Error calling the API:", err);
-            setError((err instanceof Error ? err.message : String(err)) || "An error occurred while processing the request.");
-        } finally {
-            setIsLoading(false);
+            console.error("Error initiating scoring task:", err);
+            setError((err instanceof Error ? err.message : String(err)) || "An error occurred while initiating the request.");
+            setStatusMessage(null);
+            setTaskStatus(null);
         }
     };
+
+    const isProcessing = taskStatus === TaskStatus.PENDING || taskStatus === TaskStatus.PROCESSING;
 
     return (
         <div className="container mx-auto p-4 md:p-8 min-h-screen bg-background text-foreground">
@@ -87,51 +196,59 @@ export default function HomePage() {
                         />
                         <p className="text-sm text-muted-foreground text-right">{jobDescription.length}/200</p>
                     </div>
-                     <div className="space-y-2">
-                         <Label>LLM Provider</Label>
-                         <RadioGroup
+                    <div className="space-y-2">
+                        <Label>LLM Provider</Label>
+                        <RadioGroup
                             defaultValue="openai"
                             value={modelProvider}
                             onValueChange={setModelProvider}
                             className="flex space-x-4"
-                         >
+                        >
                             <div className="flex items-center space-x-2">
                                 <RadioGroupItem value="openai" id="openai" />
                                 <Label htmlFor="openai">OpenAI (GPT)</Label>
-                             </div>
-                             <div className="flex items-center space-x-2">
-                                 <RadioGroupItem value="gemini" id="gemini" />
-                                 <Label htmlFor="gemini">Google (Gemini)</Label>
                             </div>
-                         </RadioGroup>
-                     </div>
-                    <Button onClick={handleSubmit} disabled={isLoading || !jobDescription.trim()} className="w-full md:w-auto">
-                        {isLoading ? (
-                             <span className="flex items-center">
-                                <LoadingSpinner /> <span className="ml-2">Generating Ranking...</span>
+                            <div className="flex items-center space-x-2">
+                                <RadioGroupItem value="gemini" id="gemini" />
+                                <Label htmlFor="gemini">Google (Gemini)</Label>
+                            </div>
+                        </RadioGroup>
+                    </div>
+                    <Button onClick={handleSubmit} disabled={isProcessing || !jobDescription.trim()} className="w-full md:w-auto">
+                        {isProcessing ? (
+                            <span className="flex items-center">
+                                <LoadingSpinner /> <span className="ml-2">Processing...</span>
                             </span>
                         ) : (
-                             "Generate Ranking"
+                            "Generate Ranking"
                         )}
                     </Button>
                 </CardContent>
             </Card>
 
-            <Dialog open={isLoading}>
-                <DialogContent className="sm:max-w-[425px]">
-                    <DialogHeader>
-                        <DialogTitle className="text-center">Processing Candidates</DialogTitle>
-                        <DialogDescription className="text-center">
-                            This might take a few moments. The LLM is evaluating the profiles...
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="flex justify-center items-center p-8">
-                        <LoadingSpinner />
-                    </div>
-                </DialogContent>
-            </Dialog>
+            <div className="results-section space-y-4">
+                {isProcessing && statusMessage && (
+                    <Card className="border-blue-500 bg-blue-50 text-blue-800 shadow-md">
+                        <CardHeader>
+                            <CardTitle className="flex items-center"><LoadingSpinner /><span className="ml-2">Task In Progress</span></CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p>{statusMessage}</p>
+                        </CardContent>
+                    </Card>
+                )}
 
-            <div className="results-section">
+                {taskStatus === TaskStatus.COMPLETED && !results && statusMessage && (
+                    <Card className="border-green-500 bg-green-50 text-green-800 shadow-md">
+                        <CardHeader>
+                            <CardTitle>Status</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p>{statusMessage}</p>
+                        </CardContent>
+                    </Card>
+                )}
+
                 {error && (
                     <Card className="border-destructive bg-destructive/10 text-destructive-foreground shadow-md">
                         <CardHeader>
@@ -143,13 +260,13 @@ export default function HomePage() {
                     </Card>
                 )}
 
-                {results && !isLoading && <ResultsTable results={results} />}
+                {results && taskStatus === TaskStatus.COMPLETED && <ResultsTable results={results} />}
 
-                 {!results && !isLoading && !error && (
-                     <div className="text-center text-muted-foreground mt-12">
-                         <p>Enter a description and click &quot;Generate Ranking&quot; to see the results.</p>
+                {!results && !isProcessing && !error && (
+                    <div className="text-center text-muted-foreground mt-12">
+                        <p>Enter a description and click &quot;Generate Ranking&quot; to see the results.</p>
                     </div>
-                 )}
+                )}
             </div>
         </div>
     );

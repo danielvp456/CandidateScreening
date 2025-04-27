@@ -1,5 +1,12 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
+from enum import Enum
+
+class TaskStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 class Candidate(BaseModel):
     """Represents the structure of a candidate based on preprocessed data."""
@@ -27,6 +34,18 @@ class ScoringInput(BaseModel):
     model_provider: str = Field(default='openai', description="LLM provider ('openai' or 'gemini')")
 
 class ScoringOutput(BaseModel):
-    """Output structure returned by the scoring script."""
+    """Output structure returned by the scoring script when completed."""
     scored_candidates: List[ScoredCandidate]
-    errors: List[str] = [] 
+    errors: List[str] = []
+
+class ScoringInitiationResponse(BaseModel):
+    """Response returned immediately after initiating a scoring task."""
+    task_id: str
+
+class TaskInfo(BaseModel):
+    """Represents the status and result of a scoring task."""
+    task_id: str
+    status: TaskStatus
+    message: Optional[str] = None
+    result: Optional[ScoringOutput] = None
+    error_detail: Optional[str] = None 

@@ -1,5 +1,5 @@
 import json
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Callable
 from dotenv import load_dotenv
 import logging
 
@@ -162,22 +162,32 @@ async def score_candidates_batch(
 async def score_candidates(
     job_description: str,
     candidates: List[Candidate],
-    model_provider: str = 'openai'
+    model_provider: str = 'openai',
+    progress_callback: Optional[Callable[[str], None]] = None
 ) -> tuple[List[ScoredCandidate], List[str]]:
-    """Processes candidates in batches and aggregates results."""
+    """Processes candidates in batches and aggregates results, reporting progress via callback."""
     all_scored_candidates: List[ScoredCandidate] = []
     errors: List[str] = []
+    total_batches = (len(candidates) + BATCH_SIZE - 1) // BATCH_SIZE
 
     for i in range(0, len(candidates), BATCH_SIZE):
         batch = candidates[i:i + BATCH_SIZE]
-        logging.info(f"Processing batch {i // BATCH_SIZE + 1}...")
+        batch_num = i // BATCH_SIZE + 1
+        progress_msg = f"Processing batch {batch_num} of {total_batches}... ({len(batch)} candidates)"
+        logging.info(progress_msg)
+        if progress_callback:
+            try:
+                progress_callback(progress_msg)
+            except Exception as cb_err:
+                logging.error(f"Error in progress callback: {cb_err}", exc_info=True)
+
         try:
             scored_batch = await score_candidates_batch(job_description, batch, model_provider)
             all_scored_candidates.extend(scored_batch)
         except Exception as e:
             batch_ids = [c.id for c in batch]
-            error_msg = f"Failed to score batch (IDs: {batch_ids}): {type(e).__name__}: {e}"
+            error_msg = f"Failed to score batch {batch_num} (IDs: {batch_ids}): {type(e).__name__}: {e}"
             logging.error(error_msg)
-            errors.append(error_msg) 
+            errors.append(error_msg)
 
     return all_scored_candidates, errors 

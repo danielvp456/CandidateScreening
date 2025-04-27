@@ -6,3 +6,15 @@ venv/
 
 # Ignore .env file
 .env
+
+# Ignore pytest cache files
+.pytest_cache/
+
+# Ignore log files
+*.log
+
+# Ignore tasks directory
+tasks/
+
+# Ignore result files
+*.result
