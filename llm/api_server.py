@@ -4,6 +4,7 @@ FastAPI application for the LLM Candidate Scorer.
 import logging
 import os
 import uvicorn
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,27 +12,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from data_models import ScoringInput, ScoringOutput
 from llm_interaction import score_candidates
 
-# Setup logging
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Initialize FastAPI app
 app = FastAPI(
     title="Candidate Scoring API",
     description="API to score candidates based on job descriptions using LLMs.",
     version="1.0.0"
 )
 
-# Configure CORS (Cross-Origin Resource Sharing)
-# Allow requests from your Next.js frontend (adjust origins as needed)
-origins = [
-    "http://localhost:3000",  # Default Next.js dev port
-    # Add your deployed frontend URL here, e.g., "https://your-vercel-app.vercel.app"
-]
+
+allowed_origins_str = os.getenv("ALLOWED_ORIGINS")
+origins = [origin.strip() for origin in allowed_origins_str.split(',') if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=origins, # Usar la lista leída
     allow_credentials=True,
     allow_methods=["*"],  # Allows all methods (GET, POST, etc.)
     allow_headers=["*"],  # Allows all headers

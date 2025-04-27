@@ -13,7 +13,7 @@ interface Candidate {
     educations: string;
     experiences: string;
     skills: string;
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export const normalizeText = (text: string | undefined | null): string => {

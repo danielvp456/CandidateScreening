@@ -54,9 +54,9 @@ export default function HomePage() {
                 setError(data.message || "No valid data received from the server.");
             }
 
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("Error calling the API:", err);
-            setError(err.message || "An error occurred while processing the request.");
+            setError((err instanceof Error ? err.message : String(err)) || "An error occurred while processing the request.");
         } finally {
             setIsLoading(false);
         }
@@ -147,7 +147,7 @@ export default function HomePage() {
 
                  {!results && !isLoading && !error && (
                      <div className="text-center text-muted-foreground mt-12">
-                         <p>Enter a description and click "Generate Ranking" to see the results.</p>
+                         <p>Enter a description and click &quot;Generate Ranking&quot; to see the results.</p>
                     </div>
                  )}
             </div>

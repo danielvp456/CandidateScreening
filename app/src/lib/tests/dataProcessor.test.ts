@@ -6,8 +6,8 @@ jest.mock('fs/promises');
 
 jest.mock('csv-parse/sync');
 
-const mockedReadFile = jest.spyOn(fsPromises, 'readFile').mockImplementation(() => Promise.resolve('') as any);
-const mockedParse = jest.spyOn(csvParse, 'parse').mockImplementation(() => [] as any);
+const mockedReadFile = jest.spyOn(fsPromises, 'readFile').mockImplementation(() => Promise.resolve('') as Promise<string>);
+const mockedParse = jest.spyOn(csvParse, 'parse').mockImplementation(() => [] as unknown[]);
 
 describe('Data Processor Utility Functions', () => {
     describe('normalizeText', () => {

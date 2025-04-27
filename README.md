@@ -123,14 +123,7 @@ Environment variables are crucial for API keys and configuration.
     *   Create a file named `.env.local` inside the `app` directory (`app/.env.local`).
     *   Add the path to your Python executable within the virtual environment:
         ```dotenv
-        # app/.env.local
-
-        # Adjust the path based on your OS and where you cloned the repo
-        # Example for Windows:
-        NEXT_PUBLIC_PYTHON_EXECUTABLE="../llm/venv/Scripts/python.exe"
-
-        # Example for macOS/Linux:
-        # NEXT_PUBLIC_PYTHON_EXECUTABLE="../llm/venv/bin/python"
+        NEXT_PUBLIC_PYTHON_API_URL="http://localhost:8080/score"
         ```
     *   **Important:** Ensure this path correctly points to the `python` or `python.exe` inside the `venv` you created in the `llm` directory. Adjust the relative path (`../`) if necessary based on your project structure.
 

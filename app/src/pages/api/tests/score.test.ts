@@ -9,7 +9,7 @@ global.fetch = jest.fn();
 const mockedLoadCandidates = dataProcessor.loadAndPreprocessCandidates as jest.MockedFunction<typeof dataProcessor.loadAndPreprocessCandidates>;
 const mockedFetch = global.fetch as jest.Mock;
 
-const mockFetchResponse = (body: any, ok: boolean, status: number) => {
+const mockFetchResponse = (body: unknown, ok: boolean, status: number) => {
     return Promise.resolve({
         ok: ok,
         status: status,

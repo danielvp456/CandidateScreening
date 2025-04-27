@@ -9,5 +9,5 @@ export type ApiResponse = {
     data?: ScoredCandidate[];
     message?: string;
     error?: string;
-    details?: any;
+    details?: unknown;
 }; 

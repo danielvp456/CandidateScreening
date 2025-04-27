@@ -1,5 +1,4 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import path from 'path';
 import { loadAndPreprocessCandidates } from '@/lib/dataProcessor';
 
 
@@ -19,7 +18,7 @@ type ApiResponse = {
     data?: ScoredCandidate[];
     message?: string;
     error?: string;
-    details?: any;
+    details?: unknown;
 };
 
 /**
@@ -139,11 +138,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
         if (!response.ok) {
             let errorDetails = 'Failed to get details from Python API response.';
+            const errorText = await response.text();
             try {
-                const errorJson = await response.json();
+                const errorJson = JSON.parse(errorText);
                 errorDetails = errorJson.detail || JSON.stringify(errorJson);
-            } catch (parseError) {
-                 errorDetails = await response.text();
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            } catch (_jsonParseError) {
+                 errorDetails = errorText; 
             }
             console.error(`Python API request failed with status ${response.status}: ${errorDetails}`);
             throw new Error(`Python API request failed: ${response.status} - ${errorDetails}`);
@@ -167,11 +168,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
             data: top30Candidates,
         });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error("Error in /api/score:", error);
         return res.status(500).json({
             error: 'Internal Server Error',
-            details: error.message || 'An unexpected error occurred'
+            details: (error instanceof Error ? error.message : String(error)) || 'An unexpected error occurred'
         });
     }
 } 
