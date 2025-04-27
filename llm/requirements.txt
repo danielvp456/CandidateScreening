@@ -3,3 +3,8 @@ langchain-openai
 langchain-google-genai
 python-dotenv
 langchain-openai
+
+#Testing
+pytest
+pytest-mock
+pytest-asyncio

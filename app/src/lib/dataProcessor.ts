@@ -17,12 +17,13 @@ interface Candidate {
     [key: string]: any; // For other fields
 }
 
-const normalizeText = (text: string | undefined | null): string => {
+// *** EXPORTAR FUNCIONES AUXILIARES ***
+export const normalizeText = (text: string | undefined | null): string => {
     return text ? text.toLowerCase().trim() : '';
 };
 
 // Function to clean text: remove HTML tags and basic alphanumeric characters
-const cleanText = (text: string | undefined | null): string => {
+export const cleanText = (text: string | undefined | null): string => {
     if (!text) return '';
     // Remove HTML tags
     let cleaned = text.replace(/<[^>]*>/g, '');

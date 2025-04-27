@@ -13,6 +13,7 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langchain_core.exceptions import OutputParserException
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, RetryError
 from langchain_core.prompts import SystemMessagePromptTemplate, HumanMessagePromptTemplate
+from pydantic import ValidationError
 
 from data_models import Candidate, ScoredCandidate
 from prompts import SCORING_PROMPT_TEMPLATE, FEW_SHOT_EXAMPLES, RETRY_PROMPT_TEMPLATE
@@ -114,63 +115,61 @@ async def score_candidates_batch(
     candidates_batch: List[Candidate],
     model_provider: str,
     attempt_num: int = 1
-) -> List[ScoredCandidate]:
+) -> List[ScoredCandidate] | List[Dict]:
     """Scores a single batch of candidates, handling LLM call and parsing with retries."""
     llm = llms.get(model_provider)
     if not llm:
         raise ValueError(f"Unsupported model provider: {model_provider}")
 
-    if attempt_num > 1:
-        prompt = RETRY_PROMPT_TEMPLATE
-    else:
-        prompt = SCORING_PROMPT_TEMPLATE
-
-    if attempt_num > 1:
-        chain = prompt | llm | string_parser 
-    else:
-        chain = prompt | llm | json_list_parser
-    
     prompt_values = {
         "job_description": job_description,
         "candidates_json": format_candidates_for_prompt(candidates_batch)
     }
 
     try:
-        logging.info(f"Scoring batch of {len(candidates_batch)} candidates with {model_provider} (Attempt {attempt_num})")
-        result = await invoke_llm_with_retry(chain, prompt_values)
-        
-        if isinstance(result, str):
-            try:
-                parsed_result = json.loads(result)
-                validated_result = json_list_parser.parse(parsed_result)
-                logging.info("Successfully parsed JSON from retry attempt.")
-                return validated_result
-            except (json.JSONDecodeError, OutputParserException) as parse_error:
-                logging.error(f"Error parsing JSON from retry attempt: {parse_error}")
-                raise OutputParserException(f"Failed to parse LLM output even on retry: {result}") from parse_error
-        else:
+        if attempt_num == 1:
+            logging.info(f"Scoring batch of {len(candidates_batch)} candidates with {model_provider} (Attempt 1 - Strict JSON)")
+            chain = SCORING_PROMPT_TEMPLATE | llm | json_list_parser
+            result = await invoke_llm_with_retry(chain, prompt_values)
             logging.info("Successfully parsed JSON from initial attempt.")
-            return result 
-            
+            return result # Devuelve List[ScoredCandidate]
+        else: # attempt_num == 2 (Retry)
+             logging.info(f"Scoring batch of {len(candidates_batch)} candidates with {model_provider} (Attempt 2 - String Output)")
+             chain = RETRY_PROMPT_TEMPLATE | llm | string_parser
+             string_result = await invoke_llm_with_retry(chain, prompt_values)
+             logging.info("Received string output on retry attempt. Parsing manually...")
+             parsed_result = json.loads(string_result) # Parse string to Python object List[Dict]
+             logging.info("Successfully parsed JSON string from retry attempt.")
+             # *** Devolver directamente el objeto parseado ***
+             return parsed_result # Devuelve List[Dict]
+
     except OutputParserException as e:
-        logging.error(f"Output parsing error on attempt {attempt_num}: {e}")
+        logging.warning(f"Output parsing error on attempt {attempt_num}: {e}")
         if attempt_num == 1:
             logging.info("Retrying with a less strict prompt...")
+            # Llamada recursiva para el reintento
             return await score_candidates_batch(job_description, candidates_batch, model_provider, attempt_num + 1)
         else:
+            # Falló incluso el parseo manual de string en el reintento (error viene de json.loads)
             logging.error("Failed to parse LLM output after retry.")
-            raise
-    except Exception as e:
-        if isinstance(e, RetryError):
-            original_exception = e
-            logging.error(
-                f"LLM invocation failed after multiple retries. Original Exception: {type(original_exception).__name__}: {original_exception}",
-                exc_info=True
-            )
+            # El error original 'e' aquí sería JSONDecodeError si json.loads falló.
+            # Re-lanzamos OutputParserException para consistencia, adjuntando el error original.
+            error_context = string_result if 'string_result' in locals() else "String result not available"
+            raise OutputParserException(f"Failed to parse LLM output after retry. Content: {error_context}") from e
+
+    except json.JSONDecodeError as e:
+        # Este bloque captura el error si json.loads falla en el intento 2
+        logging.error(f"JSON decoding failed on retry attempt: {e}")
+        error_context = string_result if 'string_result' in locals() else "String result not available"
+        raise OutputParserException(f"Failed to parse LLM output after retry. Content: {error_context}") from e
+
+    except Exception as e_generic:
+        # Captura otros errores como RetryError de Tenacity o errores inesperados
+        if isinstance(e_generic, RetryError):
+             logging.error(f"LLM invocation failed after multiple retries.", exc_info=True)
         else:
-            logging.error(f"Error during LLM call or processing on attempt {attempt_num}: {e}", exc_info=True)
-    
-        raise 
+             logging.error(f"An unexpected error occurred during scoring attempt {attempt_num}: {e_generic}", exc_info=True)
+        raise # Re-lanzar la excepción genérica
 
 
 async def score_candidates(
