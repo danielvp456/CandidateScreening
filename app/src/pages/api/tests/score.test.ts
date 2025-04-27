@@ -1,51 +1,41 @@
 import { createMocks } from 'node-mocks-http';
-import scoreHandler from '../score'; // Import the handler
-import * as dataProcessor from '@/lib/dataProcessor'; // To mock loadAndPreprocessCandidates
-import { spawn } from 'child_process'; // To mock the python script execution
+import scoreHandler from '../score';
+import * as dataProcessor from '@/lib/dataProcessor';
+import { spawn } from 'child_process';
 
-// --- Mocking dependencies ---
 
-// Mock the dataProcessor module
 jest.mock('@/lib/dataProcessor');
 
-// Mock the child_process module, specifically the spawn function
 jest.mock('child_process', () => ({
   spawn: jest.fn(),
 }));
 
-// --- Typed Mocks ---
 const mockedLoadCandidates = dataProcessor.loadAndPreprocessCandidates as jest.MockedFunction<typeof dataProcessor.loadAndPreprocessCandidates>;
 const mockedSpawn = spawn as jest.MockedFunction<typeof spawn>;
 
-// --- Helper para simular el proceso spawn ---
 const mockSpawnProcess = (stdoutData: string = '', stderrData: string = '', closeCode: number = 0) => {
     const mockProcess = {
         stdout: { on: jest.fn((event, cb) => { if(event === 'data') cb(Buffer.from(stdoutData, 'utf-8')) }) },
         stderr: { on: jest.fn((event, cb) => { if(event === 'data') cb(Buffer.from(stderrData, 'utf-8')) }) },
         stdin: { write: jest.fn(), end: jest.fn() },
         on: jest.fn((event, cb) => {
-             if (event === 'close') setTimeout(() => cb(closeCode), 0); // Simulate async close
-             if (event === 'error') { /* Can simulate error event too */ }
+             if (event === 'close') setTimeout(() => cb(closeCode), 0);
+             if (event === 'error') {}
         }),
     };
-    mockedSpawn.mockReturnValue(mockProcess as any); // Cast to any for simplicity here
+    mockedSpawn.mockReturnValue(mockProcess as any);
     return mockProcess;
 };
 
-// --- Test Suite ---
 describe('/api/score API Endpoint', () => {
-
-  // Reset mocks before each test
   beforeEach(() => {
     jest.clearAllMocks();
-    // Default mock implementations (can be overridden in specific tests)
     mockedLoadCandidates.mockResolvedValue([ 
       { id: 'c1', name: 'Processed Candidate 1', jobTitle: 'dev', headline:'h1', summary:'s1', skills:'sk1', educations:'ed1', experiences:'ex1', keywords:'k1' },
       { id: 'c2', name: 'Processed Candidate 2', jobTitle: 'eng', headline:'h2', summary:'s2', skills:'sk2', educations:'ed2', experiences:'ex2', keywords:'k2' },
     ]);
   });
 
-  // --- Test Cases --- 
 
   test('should return 405 if method is not POST', async () => {
     const { req, res } = createMocks({
@@ -62,17 +52,15 @@ describe('/api/score API Endpoint', () => {
   test('should return 200 with sorted candidates on successful POST', async () => {
     const jobDesc = "Test Job Description";
     const modelProvider = "openai";
-    const mockScoredCandidates = [ // Simula la salida del script Python
+    const mockScoredCandidates = [
         { id: 'c2', name: 'Processed Candidate 2', score: 95, highlights: ['Good match'] },
         { id: 'c1', name: 'Processed Candidate 1', score: 80, highlights: ['Okay match'] },
-        // Añadir más si se necesita probar el límite de 30
     ];
     const mockPythonOutput = {
         scored_candidates: mockScoredCandidates,
         errors: [],
     };
 
-    // Configurar mocks
     const mockProcess = mockSpawnProcess(JSON.stringify(mockPythonOutput), '', 0);
 
     const { req, res } = createMocks({
@@ -85,23 +73,19 @@ describe('/api/score API Endpoint', () => {
 
     await scoreHandler(req, res);
 
-    // Verificar status y respuesta
     expect(res._getStatusCode()).toBe(200);
     const responseData = res._getJSONData();
     expect(responseData.message).toContain(`Successfully scored ${mockScoredCandidates.length}`);
-    expect(responseData.data).toHaveLength(mockScoredCandidates.length); // Asumiendo < 30 en este test
-    // Verificar que los datos están ordenados por score descendente
+    expect(responseData.data).toHaveLength(mockScoredCandidates.length);
     expect(responseData.data[0].id).toBe('c2');
     expect(responseData.data[1].id).toBe('c1');
     expect(responseData.data[0].score).toBe(95);
 
-    // Verificar llamadas a mocks
     expect(mockedLoadCandidates).toHaveBeenCalledTimes(1);
     expect(mockedSpawn).toHaveBeenCalledTimes(1);
-    // Verificar que se pasó la información correcta al script python via stdin
     const expectedInputToPython = JSON.stringify({
         job_description: jobDesc,
-        candidates: await mockedLoadCandidates.mock.results[0].value, // Obtener el resultado simulado de loadCandidates
+        candidates: await mockedLoadCandidates.mock.results[0].value,
         model_provider: modelProvider
     });
     expect(mockProcess.stdin.write).toHaveBeenCalledWith(expectedInputToPython);
@@ -110,11 +94,10 @@ describe('/api/score API Endpoint', () => {
 
   test('should correctly limit results to top 30', async () => {
     const jobDesc = "Limit Test";
-    // Generar 40 candidatos puntuados simulados
     const mockScoredCandidates = Array.from({ length: 40 }, (_, i) => ({
         id: `c${i}`,
         name: `Candidate ${i}`,
-        score: 100 - i, // Puntuaciones descendentes de 100 a 61
+        score: 100 - i,
         highlights: [`h${i}`],
     }));
     const mockPythonOutput = { scored_candidates: mockScoredCandidates, errors: [] };
@@ -123,7 +106,7 @@ describe('/api/score API Endpoint', () => {
 
      const { req, res } = createMocks({
         method: 'POST',
-        body: { jobDescription: jobDesc }, // Usa provider por defecto (openai)
+        body: { jobDescription: jobDesc },
     });
 
     await scoreHandler(req, res);
@@ -131,16 +114,15 @@ describe('/api/score API Endpoint', () => {
     expect(res._getStatusCode()).toBe(200);
     const responseData = res._getJSONData();
     expect(responseData.message).toContain('Returning top 30');
-    expect(responseData.data).toHaveLength(30); // Debe estar limitado a 30
-    expect(responseData.data[0].score).toBe(100); // El mejor sigue siendo el primero
-    expect(responseData.data[29].score).toBe(71); // El último debe ser el #30 (100 - 29)
+    expect(responseData.data).toHaveLength(30);
+    expect(responseData.data[0].score).toBe(100);
+    expect(responseData.data[29].score).toBe(71);
   });
 
-  // Pruebas para validaciones de entrada
   test('should return 400 if jobDescription is missing', async () => {
     const { req, res } = createMocks({
         method: 'POST',
-        body: { modelProvider: 'openai' }, // Falta jobDescription
+        body: { modelProvider: 'openai' },
     });
     await scoreHandler(req, res);
     expect(res._getStatusCode()).toBe(400);
@@ -168,7 +150,6 @@ describe('/api/score API Endpoint', () => {
     expect(res._getJSONData()).toEqual({ error: "Invalid modelProvider. Choose 'openai' or 'gemini'." });
   });
 
-  // Pruebas para errores internos
    test('should return 500 if loadAndPreprocessCandidates fails', async () => {
     mockedLoadCandidates.mockResolvedValue([]);
 
@@ -185,7 +166,7 @@ describe('/api/score API Endpoint', () => {
 
   test('should return 500 if python script execution fails (non-zero exit code)', async () => {
     const stderrMessage = "Python Error Traceback";
-    mockSpawnProcess('', stderrMessage, 1); // Salida con código 1 y error en stderr
+    mockSpawnProcess('', stderrMessage, 1);
 
     const { req, res } = createMocks({
         method: 'POST',
@@ -203,7 +184,6 @@ describe('/api/score API Endpoint', () => {
    test('should return 500 if python script fails to start', async () => {
     const spawnError = new Error("Failed to spawn process");
     
-     // Simular el evento 'error' directamente en el mock 'on'
      mockedSpawn.mockImplementation(() => {
         const mockProcess = {
             stdout: { on: jest.fn() },
@@ -211,7 +191,6 @@ describe('/api/score API Endpoint', () => {
             stdin: { write: jest.fn(), end: jest.fn() },
             on: jest.fn((event, cb) => {
                 if (event === 'error') {
-                     // Llamar al callback de error inmediatamente o después de un timeout corto
                      setTimeout(() => cb(spawnError), 0);
                 }
             }),

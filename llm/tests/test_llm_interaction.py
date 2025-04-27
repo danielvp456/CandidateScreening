@@ -1,10 +1,7 @@
-# test_llm_interaction.py
 import json
 import pytest
 from typing import List
 
-# Asegúrate de que los data_models estén accesibles
-# Esto podría requerir ajustar sys.path o configurar el proyecto como un paquete instalable
 import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -21,15 +18,14 @@ from llm_interaction import (
 )
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch # Usaremos unittest.mock que viene con Python
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain_core.exceptions import OutputParserException
 from tenacity import RetryError
-from langchain_core.prompts import ChatPromptTemplate # Needed for patching target
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.messages import AIMessage
-from unittest.mock import call # Para verificar llamadas con argumentos específicos
+from unittest.mock import call
 
-# --- Pruebas para format_candidates_for_prompt ---
 
 def test_format_candidates_for_prompt_empty_list():
     """Verifica que una lista vacía de candidatos produce '[]'."""
@@ -83,8 +79,6 @@ def test_format_candidates_for_prompt_missing_fields():
     ], indent=2)
     assert format_candidates_for_prompt([candidate]) == expected_json
 
-# --- Fixtures y Datos de Prueba ---
-
 @pytest.fixture
 def sample_candidates() -> List[Candidate]:
     """Devuelve una lista de candidatos de ejemplo."""
@@ -100,12 +94,8 @@ def mock_llm_chain():
     mock_chain.ainvoke = AsyncMock()
     return mock_chain
 
-# --- Pruebas para score_candidates_batch ---
-
 @pytest.mark.asyncio
-# Mockeamos la función que encapsula la llamada y el retry
 @patch('llm_interaction.invoke_llm_with_retry', new_callable=AsyncMock)
-# Todavía necesitamos mockear llms para que la función no falle al buscar el llm
 @patch('llm_interaction.llms', new_callable=dict)
 async def test_score_candidates_batch_success_first_try(mock_llms_dict, mock_invoke_llm, sample_candidates):
     """Prueba el éxito en el primer intento (simulando parser exitoso dentro de invoke_llm)."""
@@ -115,16 +105,12 @@ async def test_score_candidates_batch_success_first_try(mock_llms_dict, mock_inv
         ScoredCandidate(id="c1", name="Candidate One", score=90, highlights=["Python expert"]),
         ScoredCandidate(id="c2", name="Candidate Two", score=60, highlights=["Less relevant skills"])
     ]
-    # Simulamos que invoke_llm_with_retry ya devuelve el resultado parseado
     mock_invoke_llm.return_value = expected_output
-    mock_llms_dict[model_provider] = MagicMock() # Añadir mock para que no falle la búsqueda inicial
+    mock_llms_dict[model_provider] = MagicMock()
 
-    # Llamar a la función bajo prueba
     result = await score_candidates_batch(job_desc, sample_candidates, model_provider)
 
-    # Verificar llamada a invoke_llm_with_retry
     mock_invoke_llm.assert_awaited_once()
-    # Verificar el resultado final
     assert result == expected_output
 
 @pytest.mark.asyncio
@@ -138,27 +124,22 @@ async def test_score_candidates_batch_retry_success(mock_llms_dict, mock_invoke_
         {"id": "c1", "name": "Candidate One", "score": 85, "highlights": ["Good Python"]},
         {"id": "c2", "name": "Candidate Two", "score": 55, "highlights": ["Okay"]}
     ])
-    # El objeto Python que se espera *directamente* de json.loads
     expected_parsed_output_dict = json.loads(good_output_second_try_raw)
 
-    # Configurar mock invoke_llm_with_retry con side_effect
     mock_invoke_llm.side_effect = [
-        OutputParserException("Initial parse failed"), # 1. Falla parser inicial (strict_chain)
-        good_output_second_try_raw                     # 2. Devuelve string JSON válido (retry_chain)
+        OutputParserException("Initial parse failed"),
+        good_output_second_try_raw
     ]
     mock_llms_dict[model_provider] = MagicMock()
 
-    # Llamar a la función bajo prueba
     result = await score_candidates_batch(job_desc, sample_candidates, model_provider)
 
-    # Verificaciones
-    assert mock_invoke_llm.await_count == 2 # Llamado para intento 1 y reintento
-    # Verificar resultado final (el diccionario parseado por json.loads en el reintento)
+    assert mock_invoke_llm.await_count == 2
     assert result == expected_parsed_output_dict
 
 
 @pytest.mark.asyncio
-@patch('llm_interaction.json.loads') # Todavía mockeamos json.loads para forzar el error final
+@patch('llm_interaction.json.loads')
 @patch('llm_interaction.invoke_llm_with_retry', new_callable=AsyncMock)
 @patch('llm_interaction.llms', new_callable=dict)
 async def test_score_candidates_batch_retry_fail(mock_llms_dict, mock_invoke_llm, mock_json_loads, sample_candidates):
@@ -167,29 +148,23 @@ async def test_score_candidates_batch_retry_fail(mock_llms_dict, mock_invoke_llm
     model_provider = "openai"
     bad_output = "Still not JSON"
 
-    # Configurar mock invoke_llm_with_retry:
     mock_invoke_llm.side_effect = [
-        OutputParserException("Initial parse failed"), # 1. Falla parser inicial
-        bad_output                                     # 2. Devuelve string inválido
+        OutputParserException("Initial parse failed"),
+        bad_output
     ]
-    # Configurar mock de json.loads para que falle
     mock_json_loads.side_effect = json.JSONDecodeError("Mock decode error", doc="", pos=0)
     mock_llms_dict[model_provider] = MagicMock()
 
-
-    # Verificar que se lanza OutputParserException (que ahora envuelve JSONDecodeError)
     with pytest.raises(OutputParserException, match="Failed to parse LLM output after retry"):
          await score_candidates_batch(job_desc, sample_candidates, model_provider)
 
-    # Verificar llamadas
-    assert mock_invoke_llm.await_count == 2 # Called for strict and retry chains
-    # Verificar que json.loads fue llamado en el reintento con la salida mala
+    assert mock_invoke_llm.await_count == 2
     mock_json_loads.assert_called_once_with(bad_output)
 
 
 @pytest.mark.asyncio
 @patch('llm_interaction.llms', new_callable=dict)
-@patch('llm_interaction.invoke_llm_with_retry', new_callable=AsyncMock) # Patch invoke_llm_with_retry en llm_interaction
+@patch('llm_interaction.invoke_llm_with_retry', new_callable=AsyncMock)
 async def test_score_candidates_batch_llm_api_error(mock_invoke_llm, mock_llms_dict, sample_candidates):
     """Prueba que una excepción genérica (ej. error API) se propaga después de reintentos."""
     job_desc = "Python Developer"
@@ -203,10 +178,9 @@ async def test_score_candidates_batch_llm_api_error(mock_invoke_llm, mock_llms_d
 
     mock_invoke_llm.assert_awaited()
 
-# --- Pruebas para score_candidates ---
 
 @pytest.mark.asyncio
-@patch('llm_interaction.score_candidates_batch', new_callable=AsyncMock) # Patch score_candidates_batch in llm_interaction
+@patch('llm_interaction.score_candidates_batch', new_callable=AsyncMock)
 async def test_score_candidates_single_batch_success(mock_score_batch, sample_candidates):
     """Prueba el procesamiento exitoso de una lista de candidatos que cabe en un solo lote."""
     job_desc = "Test Job"
@@ -217,7 +191,6 @@ async def test_score_candidates_single_batch_success(mock_score_batch, sample_ca
     ]
     mock_score_batch.return_value = expected_result
 
-    # Usa la función score_candidates imported
     scored, errors = await score_candidates(job_desc, sample_candidates, model_provider)
 
     mock_score_batch.assert_awaited_once_with(job_desc, sample_candidates, model_provider)
@@ -225,7 +198,7 @@ async def test_score_candidates_single_batch_success(mock_score_batch, sample_ca
     assert errors == []
 
 @pytest.mark.asyncio
-@patch('llm_interaction.score_candidates_batch', new_callable=AsyncMock) # Patch score_candidates_batch in llm_interaction
+@patch('llm_interaction.score_candidates_batch', new_callable=AsyncMock)
 async def test_score_candidates_multiple_batches_success(mock_score_batch):
     """Prueba el procesamiento exitoso con múltiples lotes."""
     job_desc = "Test Job"
@@ -249,7 +222,7 @@ async def test_score_candidates_multiple_batches_success(mock_score_batch):
     assert errors == []
 
 @pytest.mark.asyncio
-@patch('llm_interaction.score_candidates_batch', new_callable=AsyncMock) # Patch score_candidates_batch in llm_interaction
+@patch('llm_interaction.score_candidates_batch', new_callable=AsyncMock)
 async def test_score_candidates_batch_error_handling(mock_score_batch):
     """Prueba que los errores de un lote se registran y otros lotes se procesan."""
     job_desc = "Test Job"
@@ -278,7 +251,7 @@ async def test_score_candidates_batch_error_handling(mock_score_batch):
     assert all(bid in errors[0] for bid in batch1_ids)
 
 @pytest.mark.asyncio
-@patch('llm_interaction.score_candidates_batch', new_callable=AsyncMock) # Patch score_candidates_batch in llm_interaction
+@patch('llm_interaction.score_candidates_batch', new_callable=AsyncMock)
 async def test_score_candidates_no_candidates(mock_score_batch):
     """Prueba el comportamiento cuando no se proporcionan candidatos."""
     job_desc = "Test Job"
