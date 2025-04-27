@@ -2,12 +2,11 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main ] # Ejecutar en cada push a la rama main
+    branches: [ main ]
 
-# Permisos necesarios para Google Cloud y Vercel
 permissions:
   contents: read
-  id-token: write # Necesario para autenticarse con GCP usando Workload Identity Federation
+  id-token: write
 
 jobs:
   test-app:
@@ -15,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./app # Establecer el directorio de trabajo para los comandos de este job
+        working-directory: ./app
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,10 +22,10 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18' # O la versión que estés usando
+          node-version: '20.13.1' 
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install Dependencies
+        run: npm install --force
 
       - name: Run tests
         run: npm test
@@ -39,7 +38,10 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./llm # Establecer el directorio de trabajo para los comandos de este job
+        working-directory: ./llm
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -47,7 +49,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.9' # O la versión que estés usando
+          python-version: '3.12.3'
 
       - name: Install dependencies
         run: |
@@ -60,17 +62,12 @@ jobs:
   deploy-app:
     name: Deploy App to Vercel
     runs-on: ubuntu-latest
-    needs: test-app # Ejecutar sólo si test-app fue exitoso
-    environment: production # Opcional: Define un entorno para proteger los secretos
+    needs: test-app
+    if: success()
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Instalar Vercel CLI (alternativa a la acción oficial si se necesita más control)
-      # - name: Install Vercel CLI
-      #   run: npm install --global vercel@latest
-
-      # Desplegar a producción con la acción oficial
       - name: Deploy Project Artifacts to Vercel
         uses: vercel/vercel-action@v3
         with:
@@ -78,13 +75,13 @@ jobs:
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           working-directory: ./app
-          vercel-args: '--prod' # Despliega a producción
+          vercel-args: '--prod'
 
   deploy-llm:
     name: Deploy LLM API to Cloud Run
     runs-on: ubuntu-latest
-    needs: test-llm # Ejecutar sólo si test-llm fue exitoso
-    environment: production # Opcional: Define un entorno para proteger los secretos
+    needs: test-llm
+    if: success()
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
