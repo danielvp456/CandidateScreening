@@ -8,7 +8,7 @@ interface ResultsTableProps {
 
 export const ResultsTable = ({ results }: ResultsTableProps) => {
     if (!results || results.length === 0) {
-        return null; // Do not render anything if there are no results
+        return null;
     }
 
     return (

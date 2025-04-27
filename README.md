@@ -1,103 +1,170 @@
 # LLM-Powered Candidate Screening & Scoring System
 
-This project enables recruiters to submit a job description and receive a ranked list of candidates based on an LLM's scoring.
+## Overview
 
-## Architecture
+This project implements a system that enables recruiters to submit a job description and receive a ranked list of the top 30 candidates based on their profiles, leveraging the power of Large Language Models (LLMs) like OpenAI's GPT and Google's Gemini.
 
-The project is divided into two main components:
+The system consists of a Next.js frontend/backend application (`/app`) and a Python backend (`/llm`) responsible for LLM interactions.
 
--   **/app:** A Next.js application (React + TypeScript) providing the user interface and backend API.
-    -   **Frontend Architecture:** Component-based (React) using functional components and hooks. The structure follows standard Next.js conventions (`pages`, `components`, `hooks`, `types`).
-    -   **Backend Architecture:** Built using Next.js API Routes. A single endpoint (`/api/score`) handles requests, orchestrates calls to the Python module, and returns results.
--   **/llm:** Python scripts responsible for interacting with the Large Language Model (LLM) API to score candidates.
-    -   **Python Module Architecture:** Modular design. A main script (`main.py`) acts as the entry point, orchestrating calls to separate modules for data processing (`data_processor.py`), LLM interaction (`llm_interaction.py`), and prompt management (`prompts.py`).
-    -   **Communication (Node.js <-> Python):** Initially implemented via Node.js `child_process` invoking the Python script (`main.py`) and communicating through standard input/output (stdin/stdout).
+---
 
-*(Architecture diagram will be added later)*
+## Features
 
-## Project Setup
+*   **Candidate Preprocessing:** Normalizes text, removes HTML/special characters, and deduplicates candidate data loaded from a CSV file.
+*   **LLM Scoring:** Scores candidates against a job description using configurable LLM providers (OpenAI, Gemini).
+    *   Utilizes dynamic prompt engineering with few-shot examples.
+    *   Handles API rate limits with exponential backoff.
+    *   Includes retry logic for parsing LLM responses.
+*   **Backend API:** A Next.js API route (`POST /api/score`) that handles requests, interacts with the Python LLM backend, and returns ranked candidates.
+*   **Frontend Interface:** A simple React-based UI for submitting job descriptions and displaying the ranked candidate list.
 
-### Dependencies
+---
 
-**App (Node.js / Next.js):**
+## Project Structure
 
--   Dependencies are managed with `npm` and listed in `app/package.json`.
--   Key dependencies include: `next`, `react`, `react-dom`, `typescript`.
+```
+.
+├── app/            # Next.js Frontend & API
+│   ├── src/
+│   ├── public/
+│   ├── .env.local  # <--- Environment variables for Next.js (Create this!)
+│   └── ...
+├── llm/            # Python LLM Interaction & Prompts
+│   ├── tests/
+│   ├── venv/       # <--- Python Virtual Environment
+│   ├── .env        # <--- Environment variables for Python (Create this!)
+│   └── ...
+└── README.md       # <--- This file
+└── ...
+```
 
-**LLM (Python):**
+---
 
--   *(Pending: Dependencies will be listed in `llm/requirements.txt`)*
+## Getting Started
+
+### Prerequisites
+
+*   [Node.js](https://nodejs.org/) (v18 or later recommended)
+*   [npm](https://www.npmjs.com/) (or yarn/pnpm)
+*   [Python](https://www.python.org/) (v3.9 or later recommended)
+*   Access keys for LLM APIs (OpenAI and/or Google Gemini)
 
 ### Installation
 
 1.  **Clone the repository:**
     ```bash
-    git clone <REPOSITORY_URL>
-    cd <REPOSITORY_NAME>
+    git clone <your-repository-url>
+    cd <your-repository-name>
     ```
-2.  **Install App dependencies:**
+
+2.  **Setup Python Backend (`/llm`):**
     ```bash
-    cd .\app\
-    npm install
+    cd llm
+
+    # Create a virtual environment
+    python -m venv venv
+
+    # Activate the virtual environment
+    # Windows
+    .\venv\Scripts\activate
+    # macOS/Linux
+    source venv/bin/activate
+
+    # Install Python dependencies
+    pip install -r requirements.txt
+
     cd ..
     ```
-3.  **Install LLM dependencies:**
-    *(Pending: Instructions for installing Python dependencies)*
+
+3.  **Setup Next.js Application (`/app`):**
     ```bash
-    # Example:
-    # cd .\llm\
-    # python -m venv venv
-    # source venv/bin/activate # or venv\Scripts\activate on Windows
-    # pip install -r requirements.txt
-    # cd ..
+    cd app
+
+    # Install Node.js dependencies
+    npm install
+
+    cd ..
     ```
 
 ### Environment Variables
 
-An `.env` file in the project root or setting environment variables directly is required.
+Environment variables are crucial for API keys and configuration.
 
-**For the App (Next.js):**
+1.  **Python LLM Backend (`/llm`):**
+    *   Create a file named `.env` inside the `llm` directory (`llm/.env`).
+    *   Add your API keys:
+        ```dotenv
+        # llm/.env
+        OPENAI_API_KEY="your_openai_api_key_here"
+        GOOGLE_API_KEY="your_google_api_key_here"
+        ```
+    *   Replace the placeholder values with your actual keys.
 
--   *(Generally, no specific variables are required for the basic frontend, but the API might need them)*
+2.  **Next.js Application (`/app`):**
+    *   Create a file named `.env.local` inside the `app` directory (`app/.env.local`).
+    *   Add the path to your Python executable within the virtual environment:
+        ```dotenv
+        # app/.env.local
 
-**For the LLM Module (Python):**
+        # Adjust the path based on your OS and where you cloned the repo
+        # Example for Windows:
+        NEXT_PUBLIC_PYTHON_EXECUTABLE="../llm/venv/Scripts/python.exe"
 
-Create a `.env` file in the project root with the following content:
+        # Example for macOS/Linux:
+        # NEXT_PUBLIC_PYTHON_EXECUTABLE="../llm/venv/bin/python"
+        ```
+    *   **Important:** Ensure this path correctly points to the `python` or `python.exe` inside the `venv` you created in the `llm` directory. Adjust the relative path (`../`) if necessary based on your project structure.
 
-```env
-# Required for LLM interaction
-LLM_API_KEY=YOUR_API_KEY_HERE
+---
 
-# Optional: Time-to-live (in seconds) for the results cache
-# CACHE_TTL=600 # Example: 10 minutes
-```
+## Running the Application
 
-*(Note: The Next.js API might need to read these variables or securely pass the API key to the Python script).*
+1.  **Ensure the Python virtual environment (`/llm/venv`) is activated.** If not, activate it:
+    ```bash
+    # Navigate to the llm directory if you are not already there
+    cd llm
+    # Windows
+    .\venv\Scripts\activate
+    # macOS/Linux
+    source venv/bin/activate
+    cd ..
+    ```
 
-### Running Locally
-
-1.  **Start the Next.js application (Frontend + Backend API):**
+2.  **Start the Next.js development server:**
     ```bash
     cd app
     npm run dev
     ```
-    Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-2.  **Run the LLM module (if needed as a separate service):**
-    *(Pending: Specific instructions if implemented as a separate API)*
+3.  Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Testing
+---
 
-*(Pending: Instructions for running tests)*
+## Running Tests
 
-```bash
-# Example:
-# cd app
-# npm test
-# cd ../llm
-# pytest # or python -m unittest
-```
+1.  **Python Tests (`/llm`):**
+    *   Make sure the Python virtual environment is activated.
+    *   Navigate to the `llm` directory.
+    ```bash
+    cd llm
+    pytest
+    cd ..
+    ```
 
-## Technical Report
+2.  **Next.js Tests (`/app`):**
+    *   Navigate to the `app` directory.
+    ```bash
+    cd app
+    npm test
+    cd ..
+    ```
 
-*(A link to or content of the technical report will be added here).* 
+---
+
+## Tech Stack
+
+*   **Frontend:** Next.js, React, TypeScript
+*   **Backend API:** Next.js API Routes (TypeScript)
+*   **LLM Interaction:** Python, Langchain (`langchain-openai`, `langchain-google-genai`)
+*   **Testing:** Jest (for Next.js), Pytest (for Python)
+*   **Environment Management:** `dotenv` (Python), `.env.local` (Next.js) 

@@ -53,7 +53,6 @@ FEW_SHOT_EXAMPLES = [
 
 SCORING_PROMPT_TEMPLATE = ChatPromptTemplate.from_messages([
     SystemMessagePromptTemplate.from_template(SYSTEM_INSTRUCTION),
-    # Few-shot examples will be dynamically inserted here as pairs of Human/AI messages
     HumanMessagePromptTemplate.from_template("""
 Job Description:
 ---

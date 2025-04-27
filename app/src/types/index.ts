@@ -1,4 +1,3 @@
-// Defines the structure for a scored candidate
 export type ScoredCandidate = {
     id: string;
     name: string;
@@ -6,7 +5,6 @@ export type ScoredCandidate = {
     highlights: string[];
 };
 
-// Defines the expected structure of the API response
 export type ApiResponse = {
     data?: ScoredCandidate[];
     message?: string;

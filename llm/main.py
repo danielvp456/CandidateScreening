@@ -6,14 +6,12 @@ import logging
 from data_models import ScoringInput, ScoringOutput, Candidate
 from llm_interaction import score_candidates
 
-# Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 def read_input() -> ScoringInput:
     """Reads JSON input from stdin and parses it into ScoringInput."""
     try:
         input_data = json.load(sys.stdin)
-        # Validate input using Pydantic
         scoring_input = ScoringInput(**input_data)
         for i, candidate_data in enumerate(scoring_input.candidates):
             if not hasattr(candidate_data, 'id') or not candidate_data.id:
