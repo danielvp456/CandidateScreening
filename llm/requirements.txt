@@ -2,7 +2,9 @@ langchain
 langchain-openai
 langchain-google-genai
 python-dotenv
-langchain-openai
+# Web Server
+fastapi
+uvicorn[standard]
 
 #Testing
 pytest

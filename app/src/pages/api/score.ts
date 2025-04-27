@@ -1,5 +1,4 @@
 import type { NextApiRequest, NextApiResponse } from 'next';
-import { spawn } from 'child_process';
 import path from 'path';
 import { loadAndPreprocessCandidates } from '@/lib/dataProcessor';
 
@@ -11,7 +10,7 @@ type ScoredCandidate = {
     highlights: string[];
 };
 
-type PythonOutput = {
+type PythonApiResponse = {
     scored_candidates: ScoredCandidate[];
     errors: string[];
 };
@@ -22,55 +21,6 @@ type ApiResponse = {
     error?: string;
     details?: any;
 };
-
-function runPythonScript(jobDescription: string, candidates: any[], modelProvider: string): Promise<PythonOutput> {
-    return new Promise((resolve, reject) => {
-        const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python'; 
-        const scriptPath = path.join(process.cwd(), "..", "llm", "main.py");
-        const pythonProcess = spawn(pythonExecutable, [scriptPath]);
-
-        let stdoutData = '';
-        let stderrData = '';
-
-        pythonProcess.stdout.on('data', (data) => {
-            stdoutData += data.toString('utf-8');
-        });
-
-        pythonProcess.stderr.on('data', (data) => {
-            stderrData += data.toString('utf-8');
-        });
-
-        pythonProcess.on('close', (code) => {
-            console.log(`Python script stderr: ${stderrData}`);
-            if (code !== 0) {
-                console.error(`Python script exited with code ${code}`);
-                return reject(new Error(`Python script failed with code ${code}. Stderr: ${stderrData}`));
-            }
-            try {
-                const result: PythonOutput = JSON.parse(stdoutData);
-                console.log("Python script executed successfully.");
-                resolve(result);
-            } catch (error) {
-                console.error("Failed to parse Python script output:", stdoutData);
-                reject(new Error(`Failed to parse Python script output: ${error}`));
-            }
-        });
-
-        pythonProcess.on('error', (error) => {
-            console.error("Failed to start Python process:", error);
-            reject(new Error(`Failed to start Python process: ${error.message}`));
-        });
-
-        const scriptInput = JSON.stringify({
-            job_description: jobDescription,
-            candidates: candidates,
-            model_provider: modelProvider
-        });
-
-        pythonProcess.stdin.write(scriptInput);
-        pythonProcess.stdin.end();
-    });
-}
 
 /**
  * @swagger
@@ -169,11 +119,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         }
         console.log(`Loaded ${allCandidates.length} candidates.`);
 
-        console.log(`Calling Python script with ${modelProvider}...`);
-        const pythonResult = await runPythonScript(jobDescription, allCandidates, modelProvider);
+        // --- Call the Python FastAPI Backend --- 
+        const pythonApiUrl = process.env.NEXT_PUBLIC_PYTHON_API_URL || 'http://localhost:8080/score';
+        console.log(`Calling Python API at ${pythonApiUrl} with ${modelProvider}...`);
+
+        const apiRequestBody = JSON.stringify({
+            job_description: jobDescription,
+            candidates: allCandidates, // Send preprocessed candidates
+            model_provider: modelProvider
+        });
+
+        const response = await fetch(pythonApiUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: apiRequestBody,
+        });
+
+        if (!response.ok) {
+            let errorDetails = 'Failed to get details from Python API response.';
+            try {
+                const errorJson = await response.json();
+                errorDetails = errorJson.detail || JSON.stringify(errorJson);
+            } catch (parseError) {
+                 errorDetails = await response.text();
+            }
+            console.error(`Python API request failed with status ${response.status}: ${errorDetails}`);
+            throw new Error(`Python API request failed: ${response.status} - ${errorDetails}`);
+        }
+
+        const pythonResult: PythonApiResponse = await response.json();
+        console.log("Received response from Python API.");
+        // --- End Python API Call ---
 
         if (pythonResult.errors && pythonResult.errors.length > 0) {
-            console.warn("Python script reported errors:", pythonResult.errors);
+            console.warn("Python API reported errors:", pythonResult.errors);
         }
 
         const sortedCandidates = pythonResult.scored_candidates.sort((a, b) => b.score - a.score);

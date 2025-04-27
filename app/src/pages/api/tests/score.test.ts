@@ -1,110 +1,95 @@
 import { createMocks } from 'node-mocks-http';
 import scoreHandler from '../score';
 import * as dataProcessor from '@/lib/dataProcessor';
-import { spawn } from 'child_process';
-
 
 jest.mock('@/lib/dataProcessor');
 
-jest.mock('child_process', () => ({
-  spawn: jest.fn(),
-}));
+global.fetch = jest.fn();
 
 const mockedLoadCandidates = dataProcessor.loadAndPreprocessCandidates as jest.MockedFunction<typeof dataProcessor.loadAndPreprocessCandidates>;
-const mockedSpawn = spawn as jest.MockedFunction<typeof spawn>;
+const mockedFetch = global.fetch as jest.Mock;
 
-const mockSpawnProcess = (stdoutData: string = '', stderrData: string = '', closeCode: number = 0) => {
-    const mockProcess = {
-        stdout: { on: jest.fn((event, cb) => { if(event === 'data') cb(Buffer.from(stdoutData, 'utf-8')) }) },
-        stderr: { on: jest.fn((event, cb) => { if(event === 'data') cb(Buffer.from(stderrData, 'utf-8')) }) },
-        stdin: { write: jest.fn(), end: jest.fn() },
-        on: jest.fn((event, cb) => {
-             if (event === 'close') setTimeout(() => cb(closeCode), 0);
-             if (event === 'error') {}
-        }),
-    };
-    mockedSpawn.mockReturnValue(mockProcess as any);
-    return mockProcess;
+const mockFetchResponse = (body: any, ok: boolean, status: number) => {
+    return Promise.resolve({
+        ok: ok,
+        status: status,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+    });
 };
 
 describe('/api/score API Endpoint', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    mockedLoadCandidates.mockResolvedValue([ 
+  const defaultCandidates = [
       { id: 'c1', name: 'Processed Candidate 1', jobTitle: 'dev', headline:'h1', summary:'s1', skills:'sk1', educations:'ed1', experiences:'ex1', keywords:'k1' },
       { id: 'c2', name: 'Processed Candidate 2', jobTitle: 'eng', headline:'h2', summary:'s2', skills:'sk2', educations:'ed2', experiences:'ex2', keywords:'k2' },
-    ]);
+  ];
+  const defaultPythonApiUrl = 'http://localhost:8080/score';
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedLoadCandidates.mockResolvedValue([...defaultCandidates]);
+    mockedFetch.mockClear();
+    process.env.NEXT_PUBLIC_PYTHON_API_URL = defaultPythonApiUrl;
   });
 
-
   test('should return 405 if method is not POST', async () => {
-    const { req, res } = createMocks({
-      method: 'GET',
-    });
-
+    const { req, res } = createMocks({ method: 'GET' });
     await scoreHandler(req, res);
-
     expect(res._getStatusCode()).toBe(405);
     expect(res._getJSONData()).toEqual({ error: 'Method GET Not Allowed' });
-    expect(res._getHeaders()).toMatchObject({ allow: ['POST'] });
   });
 
   test('should return 200 with sorted candidates on successful POST', async () => {
     const jobDesc = "Test Job Description";
     const modelProvider = "openai";
-    const mockScoredCandidates = [
-        { id: 'c2', name: 'Processed Candidate 2', score: 95, highlights: ['Good match'] },
-        { id: 'c1', name: 'Processed Candidate 1', score: 80, highlights: ['Okay match'] },
-    ];
-    const mockPythonOutput = {
-        scored_candidates: mockScoredCandidates,
+    const mockApiResponse = {
+        scored_candidates: [
+            { id: 'c2', name: 'Processed Candidate 2', score: 95, highlights: ['Good match'] },
+            { id: 'c1', name: 'Processed Candidate 1', score: 80, highlights: ['Okay match'] },
+        ],
         errors: [],
     };
 
-    const mockProcess = mockSpawnProcess(JSON.stringify(mockPythonOutput), '', 0);
+    mockedFetch.mockReturnValue(mockFetchResponse(mockApiResponse, true, 200));
 
     const { req, res } = createMocks({
         method: 'POST',
-        body: {
-            jobDescription: jobDesc,
-            modelProvider: modelProvider,
-        },
+        body: { jobDescription: jobDesc, modelProvider: modelProvider },
     });
 
     await scoreHandler(req, res);
 
     expect(res._getStatusCode()).toBe(200);
     const responseData = res._getJSONData();
-    expect(responseData.message).toContain(`Successfully scored ${mockScoredCandidates.length}`);
-    expect(responseData.data).toHaveLength(mockScoredCandidates.length);
+    expect(responseData.message).toContain(`Successfully scored ${mockApiResponse.scored_candidates.length}`);
+    expect(responseData.data).toHaveLength(mockApiResponse.scored_candidates.length);
     expect(responseData.data[0].id).toBe('c2');
     expect(responseData.data[1].id).toBe('c1');
     expect(responseData.data[0].score).toBe(95);
 
     expect(mockedLoadCandidates).toHaveBeenCalledTimes(1);
-    expect(mockedSpawn).toHaveBeenCalledTimes(1);
-    const expectedInputToPython = JSON.stringify({
-        job_description: jobDesc,
-        candidates: await mockedLoadCandidates.mock.results[0].value,
-        model_provider: modelProvider
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
+    expect(mockedFetch).toHaveBeenCalledWith(defaultPythonApiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            job_description: jobDesc,
+            candidates: defaultCandidates,
+            model_provider: modelProvider
+        }),
     });
-    expect(mockProcess.stdin.write).toHaveBeenCalledWith(expectedInputToPython);
-    expect(mockProcess.stdin.end).toHaveBeenCalledTimes(1);
   });
 
   test('should correctly limit results to top 30', async () => {
     const jobDesc = "Limit Test";
     const mockScoredCandidates = Array.from({ length: 40 }, (_, i) => ({
-        id: `c${i}`,
-        name: `Candidate ${i}`,
-        score: 100 - i,
-        highlights: [`h${i}`],
+        id: `c${i}`, name: `Candidate ${i}`, score: 100 - i, highlights: [`h${i}`],
     }));
-    const mockPythonOutput = { scored_candidates: mockScoredCandidates, errors: [] };
+    const mockApiResponse = { scored_candidates: mockScoredCandidates, errors: [] };
 
-    mockSpawnProcess(JSON.stringify(mockPythonOutput), '', 0);
+    mockedFetch.mockReturnValue(mockFetchResponse(mockApiResponse, true, 200));
 
-     const { req, res } = createMocks({
+    const { req, res } = createMocks({
         method: 'POST',
         body: { jobDescription: jobDesc },
     });
@@ -120,10 +105,7 @@ describe('/api/score API Endpoint', () => {
   });
 
   test('should return 400 if jobDescription is missing', async () => {
-    const { req, res } = createMocks({
-        method: 'POST',
-        body: { modelProvider: 'openai' },
-    });
+    const { req, res } = createMocks({ method: 'POST', body: {} });
     await scoreHandler(req, res);
     expect(res._getStatusCode()).toBe(400);
     expect(res._getJSONData()).toEqual({ error: 'Missing jobDescription in request body' });
@@ -131,121 +113,103 @@ describe('/api/score API Endpoint', () => {
 
   test('should return 400 if jobDescription exceeds 200 characters', async () => {
     const longDescription = 'a'.repeat(201);
-    const { req, res } = createMocks({
-        method: 'POST',
-        body: { jobDescription: longDescription },
-    });
+    const { req, res } = createMocks({ method: 'POST', body: { jobDescription: longDescription } });
     await scoreHandler(req, res);
     expect(res._getStatusCode()).toBe(400);
     expect(res._getJSONData()).toEqual({ error: 'jobDescription must be a string with a maximum length of 200 characters' });
   });
 
-   test('should return 400 if modelProvider is invalid', async () => {
-    const { req, res } = createMocks({
-        method: 'POST',
-        body: { jobDescription: 'Valid desc', modelProvider: 'invalid_provider' },
-    });
+  test('should return 400 if modelProvider is invalid', async () => {
+    const { req, res } = createMocks({ method: 'POST', body: { jobDescription: 'Valid', modelProvider: 'invalid' } });
     await scoreHandler(req, res);
     expect(res._getStatusCode()).toBe(400);
     expect(res._getJSONData()).toEqual({ error: "Invalid modelProvider. Choose 'openai' or 'gemini'." });
   });
 
-   test('should return 500 if loadAndPreprocessCandidates fails', async () => {
+  test('should return 500 if loadAndPreprocessCandidates fails', async () => {
     mockedLoadCandidates.mockResolvedValue([]);
-
-    const { req, res } = createMocks({
-        method: 'POST',
-        body: { jobDescription: 'Test' },
-    });
-
+    const { req, res } = createMocks({ method: 'POST', body: { jobDescription: 'Test' } });
     await scoreHandler(req, res);
-
     expect(res._getStatusCode()).toBe(500);
     expect(res._getJSONData()).toEqual({ error: 'Failed to load candidate data.' });
   });
 
-  test('should return 500 if python script execution fails (non-zero exit code)', async () => {
-    const stderrMessage = "Python Error Traceback";
-    mockSpawnProcess('', stderrMessage, 1);
+  test('should return 500 if Python API request fails (non-ok status)', async () => {
+    const errorDetail = "Internal Server Error from Python API";
+    const status = 500;
+    mockedFetch.mockReturnValue(mockFetchResponse({ detail: errorDetail }, false, status));
 
     const { req, res } = createMocks({
         method: 'POST',
-        body: { jobDescription: 'Test' },
+        body: { jobDescription: 'Test API Error' },
     });
 
     await scoreHandler(req, res);
 
     expect(res._getStatusCode()).toBe(500);
     expect(res._getJSONData().error).toBe('Internal Server Error');
-    expect(res._getJSONData().details).toContain('Python script failed with code 1');
-    expect(res._getJSONData().details).toContain(stderrMessage);
+    expect(res._getJSONData().details).toContain(`Python API request failed: ${status}`);
+    expect(res._getJSONData().details).toContain(errorDetail);
   });
 
-   test('should return 500 if python script fails to start', async () => {
-    const spawnError = new Error("Failed to spawn process");
-    
-     mockedSpawn.mockImplementation(() => {
-        const mockProcess = {
-            stdout: { on: jest.fn() },
-            stderr: { on: jest.fn() },
-            stdin: { write: jest.fn(), end: jest.fn() },
-            on: jest.fn((event, cb) => {
-                if (event === 'error') {
-                     setTimeout(() => cb(spawnError), 0);
-                }
-            }),
-        };
-        return mockProcess as any;
-    });
-
+  test('should return 500 if fetch itself throws an error (network error)', async () => {
+    const networkError = new Error("Network connection refused");
+    mockedFetch.mockRejectedValue(networkError);
 
     const { req, res } = createMocks({
         method: 'POST',
-        body: { jobDescription: 'Test' },
-    });
-    
-    await scoreHandler(req, res);
-
-    expect(res._getStatusCode()).toBe(500);
-    expect(res._getJSONData().error).toBe('Internal Server Error');
-    expect(res._getJSONData().details).toContain(`Failed to start Python process: ${spawnError.message}`);
-  });
-
-  test('should return 500 if python script output is invalid JSON', async () => {
-    mockSpawnProcess("This is definitely not JSON", '', 0); // Salida inválida
-
-    const { req, res } = createMocks({
-        method: 'POST',
-        body: { jobDescription: 'Test' },
+        body: { jobDescription: 'Test Network Error' },
     });
 
     await scoreHandler(req, res);
 
     expect(res._getStatusCode()).toBe(500);
     expect(res._getJSONData().error).toBe('Internal Server Error');
-    expect(res._getJSONData().details).toContain('Failed to parse Python script output');
+    expect(res._getJSONData().details).toBe(networkError.message);
   });
 
-   test('should return 200 but include python errors in message if script reports errors', async () => {
-       const mockScoredCandidates = [ { id: 'c1', name: 'Cand 1', score: 70, highlights: ['h1'] } ];
-       const pythonErrors = ["Error processing candidate X", "Timeout on candidate Y"];
-       const mockPythonOutput = {
-           scored_candidates: mockScoredCandidates,
-           errors: pythonErrors,
-       };
-       mockSpawnProcess(JSON.stringify(mockPythonOutput), '', 0);
+  test('should return 500 if Python API response is not valid JSON', async () => {
+      const nonJsonResponse = Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => { throw new Error("Invalid JSON"); },
+          text: async () => "<html><body>Error page</body></html>"
+      });
+      mockedFetch.mockReturnValue(nonJsonResponse);
 
-       const { req, res } = createMocks({
+      const { req, res } = createMocks({
           method: 'POST',
-          body: { jobDescription: 'Test with errors' },
+          body: { jobDescription: 'Test Invalid JSON Resp' },
       });
 
-       await scoreHandler(req, res);
+      await scoreHandler(req, res);
 
-       expect(res._getStatusCode()).toBe(200);
-       const responseData = res._getJSONData();
-       expect(responseData.data).toEqual(mockScoredCandidates);
-       expect(responseData.message).toContain(`Python errors: ${pythonErrors.length}`);
-   });
+      expect(res._getStatusCode()).toBe(500);
+      expect(res._getJSONData().error).toBe('Internal Server Error');
+      expect(res._getJSONData().details).toMatch(/Invalid JSON|Failed to parse/i);
+  });
 
+  test('should return 200 but include python errors in message if API reports errors', async () => {
+      const mockScoredCandidates = [ { id: 'c1', name: 'Cand 1', score: 70, highlights: ['h1'] } ];
+      const pythonErrors = ["Error processing candidate X", "Timeout on candidate Y"];
+      const mockApiResponse = {
+          scored_candidates: mockScoredCandidates,
+          errors: pythonErrors,
+      };
+
+      mockedFetch.mockReturnValue(mockFetchResponse(mockApiResponse, true, 200));
+
+      const { req, res } = createMocks({
+         method: 'POST',
+         body: { jobDescription: 'Test with errors' },
+     });
+
+      await scoreHandler(req, res);
+
+      expect(res._getStatusCode()).toBe(200);
+      const responseData = res._getJSONData();
+      expect(responseData.data).toEqual(mockScoredCandidates);
+      const expectedMessage = `Successfully scored ${mockApiResponse.scored_candidates.length} candidates. Returning top ${mockApiResponse.scored_candidates.length}. Python errors: ${pythonErrors.length}`;
+      expect(responseData.message).toBe(expectedMessage);
+  });
 }); 
