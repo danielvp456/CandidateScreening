@@ -64,18 +64,32 @@ jobs:
     runs-on: ubuntu-latest
     needs: test-app
     if: success()
+    defaults:
+      run:
+        # Asegurarse que los comandos se ejecutan en el directorio correcto
+        working-directory: ./app
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy Project Artifacts to Vercel
-        uses: vercel/vercel-action@v28
+      # Añadir paso para configurar Node.js (necesario para npm)
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          working-directory: ./app
-          vercel-args: '--prod'
+          node-version: '20.13.1' # Usar la misma versión que en test-app
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      # Ya no necesitamos 'vercel pull' para producción si no dependemos de env vars específicas de preview
+
+      - name: Build Project Artifacts for Production
+        # Ejecutar vercel build dentro del directorio app
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy Project Artifacts to Vercel Production
+        # Ejecutar vercel deploy dentro del directorio app
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
 
   deploy-llm:
     name: Deploy LLM API to Cloud Run
