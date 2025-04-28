@@ -79,6 +79,8 @@ The project follows a microservice-like architecture:
 `Frontend (Browser) -> Next.js API (/api/score) -> Python FastAPI (/score) -> LLM API (OpenAI/Gemini)`
 
 *(Architecture diagram placeholder - can be replaced with an actual diagram)*
+![diagram-export-27-4-2025-9_47_18-p -m](https://github.com/user-attachments/assets/b54e3732-39b4-4c42-a587-4e9ba4ac513e)
+
 
 ---
 
