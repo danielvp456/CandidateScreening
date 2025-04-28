@@ -58,18 +58,6 @@ export default function HomePage() {
                 }
                 setError(null);
 
-                console.log(`Attempting to delete task ${currentTaskId} from backend store...`);
-                fetch(`/api/score/task/${currentTaskId}`, { method: 'DELETE' })
-                    .then(deleteResponse => {
-                        if (deleteResponse.ok) {
-                            console.log(`Task ${currentTaskId} marked for deletion successfully.`);
-                        } else {
-                            console.error(`Failed to delete task ${currentTaskId}. Status: ${deleteResponse.status}`);
-                        }
-                    })
-                    .catch(deleteError => {
-                        console.error(`Error occurred during fetch to delete task ${currentTaskId}:`, deleteError);
-                    });
             } else if (data.status === TaskStatus.FAILED) {
                 console.error("Task failed:", data);
                 stopPolling();

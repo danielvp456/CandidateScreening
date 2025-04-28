@@ -147,7 +147,7 @@ Environment variables are crucial for API keys and configuration.
     *   Start the Uvicorn server:
         ```bash
         # For development with auto-reload
-        uvicorn api_server:app --reload --port 8080
+        uvicorn api_server:app --reload --port 8080 --reload-exclude tasks/
         # Or for a production-like start (without auto-reload)
         # uvicorn api_server:app --host 0.0.0.0 --port 8080
         ```

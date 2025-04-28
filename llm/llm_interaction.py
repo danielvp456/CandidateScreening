@@ -27,7 +27,7 @@ BATCH_SIZE = 10
 
 
 llms = {
-    'openai': ChatOpenAI(temperature=0, model_name="gpt-3.5-turbo"),
+    'openai': ChatOpenAI(temperature=0, model_name="gpt-4.1-nano"),
     'gemini': ChatGoogleGenerativeAI(temperature=0, model="gemini-1.5-flash")
 }
 

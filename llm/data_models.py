@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from enum import Enum
+from datetime import datetime
 
 class TaskStatus(str, Enum):
     PENDING = "PENDING"
@@ -46,6 +47,8 @@ class TaskInfo(BaseModel):
     """Represents the status and result of a scoring task."""
     task_id: str
     status: TaskStatus
+    job_description: Optional[str] = None
+    created_at: Optional[datetime] = None
     message: Optional[str] = None
     result: Optional[ScoringOutput] = None
     error_detail: Optional[str] = None 

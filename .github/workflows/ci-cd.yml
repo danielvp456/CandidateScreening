@@ -87,29 +87,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Autenticación con Google Cloud usando Workload Identity Federation (recomendado)
-      # Asegúrate de haber configurado Workload Identity Federation en GCP
-      # https://github.com/google-github-actions/auth
       - id: 'auth'
         uses: 'google-github-actions/auth@v2'
         with:
-          credentials_json: '${{ secrets.GCP_SA_KEY }}' # Utiliza la clave de la cuenta de servicio
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
 
-      # Configurar gcloud CLI
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      # Opcional: Configurar Docker para autenticarse con Google Artifact Registry (si usas GAR)
-      # - name: Configure Docker
-      #   run: gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev
-
-      # Construir y subir la imagen Docker (usando Cloud Build o Docker directamente)
-      # Ejemplo usando Cloud Build (requiere permisos de Cloud Build en la SA)
       - name: Build and Push Docker image with Cloud Build
         run: |
           gcloud builds submit ./llm --tag gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_SERVICE_NAME }}:latest
 
-      # Desplegar la imagen a Cloud Run
       - name: Deploy to Cloud Run
         id: deploy
         uses: google-github-actions/deploy-cloudrun@v2
@@ -117,13 +106,7 @@ jobs:
           service: ${{ secrets.GCP_SERVICE_NAME }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           region: ${{ secrets.GCP_REGION }}
-          # Usa la imagen construida previamente (asegúrate que la etiqueta coincida)
           image: gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.GCP_SERVICE_NAME }}:latest
-          # Opcional: Pasa variables de entorno desde secretos de GitHub a Cloud Run
-          # env_vars: |
-          #   OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY_SECRET_NAME }}
-          #   GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY_SECRET_NAME }}
 
-      # Opcional: Mostrar la URL del servicio desplegado
       - name: Show deployed URL
         run: echo "Deployed to ${{ steps.deploy.outputs.url }}" 
